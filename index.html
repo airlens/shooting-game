@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シューティングゲーム</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: Arial, sans-serif;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 400px;
+            height: 600px;
+            background: linear-gradient(to bottom, #000033 0%, #001155 100%);
+            border: 3px solid #00ff00;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+            touch-action: none;
+        }
+
+        #player {
+            position: absolute;
+            bottom: 20px;
+            left: 175px;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #00ff00, #00aa00);
+            clip-path: polygon(50% 0%, 100% 100%, 75% 85%, 25% 85%, 0% 100%);
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        .bullet {
+            position: absolute;
+            width: 5px;
+            height: 15px;
+            background: #ffff00;
+            box-shadow: 0 0 5px #ffff00;
+        }
+
+        .enemy {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #ff0000, #aa0000);
+            border-radius: 50%;
+            box-shadow: 0 0 10px #ff0000;
+        }
+
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #00ff00;
+            font-size: 20px;
+            font-weight: bold;
+            z-index: 100;
+            text-shadow: 0 0 5px #00ff00;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border: 3px solid #ff0000;
+            text-align: center;
+            border-radius: 10px;
+            display: none;
+            z-index: 200;
+            box-shadow: 0 0 20px #ff0000;
+        }
+
+        #gameOver h1 {
+            color: #ff0000;
+            font-size: 40px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #ff0000;
+        }
+
+        #gameOver p {
+            color: #00ff00;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver button {
+            padding: 10px 30px;
+            font-size: 18px;
+            background: #00ff00;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        #gameOver button:hover {
+            background: #00aa00;
+            box-shadow: 0 0 10px #00ff00;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #00ff00;
+            font-size: 12px;
+            text-align: right;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="score">スコア: 0</div>
+        <div id="player"></div>
+        <div id="gameOver">
+            <h1>ゲームオーバー</h1>
+            <p id="finalScore">スコア: 0</p>
+            <button onclick="location.reload()">もう一度プレイ</button>
+        </div>
+        <div id="instructions">
+            マウスで操作<br>
+            敵を撃て！
+        </div>
+    </div>
+
+    <script>
+        // ゲーム変数
+        const gameContainer = document.getElementById('gameContainer');
+        const player = document.getElementById('player');
+        const scoreDisplay = document.getElementById('score');
+        const gameOverScreen = document.getElementById('gameOver');
+        const finalScoreDisplay = document.getElementById('finalScore');
+
+        let score = 0;
+        let gameRunning = true;
+        let mouseX = 200;
+        let mouseY = 550;
+
+        // ゲーム設定
+        const GAME_WIDTH = 400;
+        const GAME_HEIGHT = 600;
+        const PLAYER_SIZE = 50;
+        const BULLET_SPEED = 8;
+        const ENEMY_SPEED = 2;
+        const ENEMY_SIZE = 40;
+        const SPAWN_RATE = 60; // フレーム数
+
+        let bullets = [];
+        let enemies = [];
+        let frameCount = 0;
+
+        // マウス/タッチ移動イベント
+        document.addEventListener('mousemove', (e) => {
+            const rect = gameContainer.getBoundingClientRect();
+            mouseX = e.clientX - rect.left - PLAYER_SIZE / 2;
+            mouseY = e.clientY - rect.top - PLAYER_SIZE / 2;
+
+            // 画面内に制限
+            mouseX = Math.max(0, Math.min(mouseX, GAME_WIDTH - PLAYER_SIZE));
+            mouseY = Math.max(0, Math.min(mouseY, GAME_HEIGHT - PLAYER_SIZE));
+        });
+
+        // タッチイベント対応
+        document.addEventListener('touchmove', (e) => {
+            const rect = gameContainer.getBoundingClientRect();
+            const touch = e.touches[0];
+            mouseX = touch.clientX - rect.left - PLAYER_SIZE / 2;
+            mouseY = touch.clientY - rect.top - PLAYER_SIZE / 2;
+
+            // 画面内に制限
+            mouseX = Math.max(0, Math.min(mouseX, GAME_WIDTH - PLAYER_SIZE));
+            mouseY = Math.max(0, Math.min(mouseY, GAME_HEIGHT - PLAYER_SIZE));
+        }, { passive: true });
+
+        // 敵を生成
+        function spawnEnemy() {
+            const enemy = {
+                x: Math.random() * (GAME_WIDTH - ENEMY_SIZE),
+                y: -ENEMY_SIZE,
+                element: document.createElement('div')
+            };
+
+            enemy.element.className = 'enemy';
+            enemy.element.style.left = enemy.x + 'px';
+            enemy.element.style.top = enemy.y + 'px';
+            gameContainer.appendChild(enemy.element);
+
+            enemies.push(enemy);
+        }
+
+        // 弾を発射
+        function fireBullet() {
+            if (!gameRunning) return;
+
+            const bullet = {
+                x: mouseX + PLAYER_SIZE / 2 - 2.5,
+                y: mouseY,
+                element: document.createElement('div')
+            };
+
+            bullet.element.className = 'bullet';
+            bullet.element.style.left = bullet.x + 'px';
+            bullet.element.style.top = bullet.y + 'px';
+            gameContainer.appendChild(bullet.element);
+
+            bullets.push(bullet);
+        }
+
+        // ゲーム終了
+        function endGame() {
+            gameRunning = false;
+            gameOverScreen.style.display = 'block';
+            finalScoreDisplay.textContent = 'スコア: ' + score;
+        }
+
+        // ゲームループ
+        function gameLoop() {
+            if (!gameRunning) {
+                requestAnimationFrame(gameLoop);
+                return;
+            }
+
+            frameCount++;
+
+            // プレイヤーの位置更新
+            player.style.left = mouseX + 'px';
+            player.style.top = mouseY + 'px';
+
+            // 敵を生成
+            if (frameCount % SPAWN_RATE === 0) {
+                spawnEnemy();
+            }
+
+            // 弾を更新
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].y -= BULLET_SPEED;
+                bullets[i].element.style.top = bullets[i].y + 'px';
+
+                // 画面外の弾を削除
+                if (bullets[i].y < 0) {
+                    bullets[i].element.remove();
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // 敵を更新
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                enemies[i].y += ENEMY_SPEED;
+                enemies[i].element.style.top = enemies[i].y + 'px';
+
+                // 敵が画面下に到達
+                if (enemies[i].y > GAME_HEIGHT) {
+                    enemies[i].element.remove();
+                    enemies.splice(i, 1);
+                    endGame();
+                    continue;
+                }
+
+                // 敵と弾の衝突判定
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    if (checkCollision(bullets[j], enemies[i])) {
+                        // 敵と弾を削除
+                        enemies[i].element.remove();
+                        bullets[j].element.remove();
+                        enemies.splice(i, 1);
+                        bullets.splice(j, 1);
+
+                        // スコア加算
+                        score += 10;
+                        scoreDisplay.textContent = 'スコア: ' + score;
+                        break;
+                    }
+                }
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 衝突判定
+        function checkCollision(bullet, enemy) {
+            return (
+                bullet.x < enemy.x + ENEMY_SIZE &&
+                bullet.x + 5 > enemy.x &&
+                bullet.y < enemy.y + ENEMY_SIZE &&
+                bullet.y + 15 > enemy.y
+            );
+        }
+
+        // 自動発射（300msごと）
+        setInterval(() => {
+            if (gameRunning) {
+                fireBullet();
+            }
+        }, 300);
+
+        // ゲーム開始
+        gameLoop();
+    </script>
+</body>
+</html>
